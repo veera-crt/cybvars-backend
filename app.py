@@ -23,12 +23,18 @@ app.secret_key = secrets.token_hex(32)  # For session management
  # Session timeout
  
 app = Flask(__name__)
+
+app.config.update(
+    SESSION_COOKIE_SAMESITE='None',
+    SESSION_COOKIE_SECURE=True
+)
+
 CORS(app, supports_credentials=True, resources={
     r"/api/*": {
         "origins": [
             "http://127.0.0.1:5500",   # For local frontend (VS Code Live Server)
             "http://localhost:5500",   # Sometimes VS Code uses this
-            "https://your-github-username.github.io"  # For deployment (update with your actual username)
+            "https://veera-crt.github.io"  # For deployment (update with your actual username)
         ],
         "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         "allow_headers": ["Content-Type"],
