@@ -1,0 +1,6 @@
+Flask
+flask-cors
+psycopg2-binary
+gunicorn
+werkzeug
+# Add any other packages your app imports (like smtplib, etc. — but built-in ones like smtplib and threading don’t need to be listed)
