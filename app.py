@@ -16,6 +16,15 @@ import base64
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 import logging
+import os
+from dotenv import load_dotenv
+
+# Explicitly load the .env from current directory
+dotenv_path = os.path.join(os.path.dirname(__file__), '.env')
+load_dotenv(dotenv_path)
+
+print("DB_HOST:", os.getenv("DB_HOST"))
+print("DB_USER:", os.getenv("DB_USER"))
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -23,6 +32,8 @@ logger = logging.getLogger(__name__)
 
 # Load environment variables
 load_dotenv()
+print("DB_HOST:", os.getenv("DB_HOST"))
+print("DB_USER:", os.getenv("DB_USER"))
 
 # Encryption configuration
 ENCRYPTION_SALT = os.getenv("ENCRYPTION_SALT").encode()
@@ -61,6 +72,8 @@ def get_db_connection():
         user=os.getenv("DB_USER"),
         password=os.getenv("DB_PASSWORD"),
         host=os.getenv("DB_HOST"),
+        sslmode='require',
+        sslrootcert=None,
         cursor_factory=RealDictCursor
     )
 
@@ -125,11 +138,11 @@ def get_user_encryptor(user_id: int) -> DataEncryptor:
         raise
 
 # ---------- Routes ----------
-
+now = datetime.utcnow()
 @app.route('/api/health', methods=['GET'])
 def health_check():
     """Health check endpoint"""
-    return jsonify({"status": "healthy", "timestamp": datetime.now().isoformat()})
+    return jsonify({"status": "healthy", "timestamp": now.isoformat()})
 
 @app.route('/api/register', methods=['POST'])
 def register():
@@ -196,11 +209,11 @@ def generate_otp():
                 # Generate new OTP as string (not integer)
                 otp = str(random.randint(100000, 999999))
                 
-                # Store OTP with expiration (7 minutes)
+                # Store OTP with expiration (7 minutes) using UTC
                 cur.execute("""
                     UPDATE users 
                     SET sensitive_action_otp = %s, 
-                        otp_expires_at = NOW() + INTERVAL '7 minutes'
+                        otp_expires_at = NOW() AT TIME ZONE 'UTC' + INTERVAL '7 minutes'
                     WHERE id = %s
                     RETURNING email, sensitive_action_otp
                 """, (otp, session['user_id']))
@@ -240,7 +253,7 @@ def verify_action_otp():
                 # Debug: Log what we're checking
                 logger.info(f"Verifying OTP for user {user_id}, input: {otp_input}")
                 
-                # Get current OTP info
+                # Get current OTP info using UTC
                 cur.execute("""
                     SELECT sensitive_action_otp, otp_expires_at 
                     FROM users 
@@ -254,12 +267,12 @@ def verify_action_otp():
 
                 logger.info(f"DB OTP: {result['sensitive_action_otp']}, Expires: {result['otp_expires_at']}")
 
-                # Check if OTP exists and is not expired
+                # Check if OTP exists and is not expired (using UTC)
                 if not result['sensitive_action_otp']:
                     logger.error("No OTP set for user")
                     return jsonify(success=False, message="No OTP generated"), 400
 
-                if result['otp_expires_at'] < datetime.now():
+                if result['otp_expires_at'] < datetime.utcnow():
                     logger.error("OTP expired")
                     return jsonify(success=False, message="OTP expired"), 400
 
@@ -271,14 +284,14 @@ def verify_action_otp():
                         message="OTP does not match"
                     ), 400
 
-                # Generate and store action token
+                # Generate and store action token (using UTC)
                 action_token = secrets.token_urlsafe(32)
                 cur.execute("""
                     UPDATE users 
                     SET sensitive_action_otp = NULL,
                         otp_expires_at = NULL,
                         action_token = %s,
-                        action_token_expires = NOW() + INTERVAL '5 minutes'
+                        action_token_expires = NOW() AT TIME ZONE 'UTC' + INTERVAL '5 minutes'
                     WHERE id = %s
                 """, (action_token, user_id))
                 
@@ -315,7 +328,7 @@ def debug_otp():
                     "otp_expires_at": str(result['otp_expires_at']),
                     "action_token": result['action_token'],
                     "action_token_expires": str(result['action_token_expires']),
-                    "current_time": str(datetime.now())
+                    "current_time_utc": str(datetime.utcnow())
                 })
     except Exception as e:
         return jsonify(success=False, message=str(e)), 500
@@ -420,9 +433,6 @@ def verify_otp():
         logger.error(f"OTP verification error: {e}")
         return jsonify(success=False, message="OTP verification failed"), 500
 
-# Add these new routes to your existing app.py
-
-
 @app.route('/api/verify-reset-otp', methods=['POST'])
 def verify_reset_otp():
     """Verify the password reset OTP"""
@@ -450,15 +460,15 @@ def verify_reset_otp():
                 if not user['reset_password_otp'] or user['reset_password_otp'] != otp:
                     return jsonify(success=False, message="Invalid OTP"), 400
 
-                if user['reset_password_otp_expires'] < datetime.now():
+                if user['reset_password_otp_expires'] < datetime.utcnow():
                     return jsonify(success=False, message="OTP expired"), 400
 
-                # Generate and store reset token
+                # Generate and store reset token (using UTC)
                 reset_token = secrets.token_urlsafe(32)
                 cur.execute("""
                     UPDATE users 
                     SET reset_password_token = %s,
-                        reset_password_token_expires = NOW() + INTERVAL '10 minutes'
+                        reset_password_token_expires = NOW() AT TIME ZONE 'UTC' + INTERVAL '10 minutes'
                     WHERE id = %s
                 """, (reset_token, user['id']))
 
@@ -495,7 +505,7 @@ def reset_password():
                 if not user['reset_password_token'] or user['reset_password_token'] != reset_token:
                     return jsonify(success=False, message="Invalid reset token"), 400
 
-                if user['reset_password_token_expires'] < datetime.now():
+                if user['reset_password_token_expires'] < datetime.utcnow():
                     return jsonify(success=False, message="Reset token expired"), 400
 
                 # Update password and clear reset fields
@@ -541,7 +551,7 @@ def initiate_password_reset():
                 if decrypted_phone != phone:
                     return jsonify(success=False, message="Failed | Email / Phone number Incorrect"), 400
 
-                # Generate and store password reset OTP
+                # Generate and store password reset OTP (using UTC)
                 reset_otp = str(random.randint(100000, 999999))
                 
                 # First check if columns exist
@@ -549,7 +559,7 @@ def initiate_password_reset():
                     cur.execute("""
                         UPDATE users 
                         SET reset_password_otp = %s,
-                            reset_password_otp_expires = NOW() + INTERVAL '10 minutes'
+                            reset_password_otp_expires = NOW() AT TIME ZONE 'UTC' + INTERVAL '10 minutes'
                         WHERE id = %s
                         RETURNING id
                     """, (reset_otp, user['id']))
@@ -568,7 +578,7 @@ def initiate_password_reset():
                         cur.execute("""
                             UPDATE users 
                             SET reset_password_otp = %s,
-                                reset_password_otp_expires = NOW() + INTERVAL '10 minutes'
+                                reset_password_otp_expires = NOW() AT TIME ZONE 'UTC' + INTERVAL '10 minutes'
                             WHERE id = %s
                             RETURNING id
                         """, (reset_otp, user['id']))
@@ -602,7 +612,7 @@ def resend_otp():
                 otp = f"{random.randint(100000, 999999)}"
                 cur.execute("""
                     UPDATE users 
-                    SET otp = %s, otp_verified = FALSE, otp_expires_at = NOW() + INTERVAL '7 minutes' 
+                    SET otp = %s, otp_verified = FALSE, otp_expires_at = NOW() AT TIME ZONE 'UTC' + INTERVAL '7 minutes' 
                     WHERE email = %s
                 """, (otp, email))
 
@@ -665,7 +675,7 @@ def update_password(password_id):
                 cur.execute("""
                     SELECT action_token, action_token_expires 
                     FROM users 
-                    WHERE id = %s AND action_token_expires > NOW() AND action_token = %s
+                    WHERE id = %s AND action_token_expires > NOW() AT TIME ZONE 'UTC' AND action_token = %s
                 """, (session['user_id'], data['action_token']))
                 result = cur.fetchone()
 
