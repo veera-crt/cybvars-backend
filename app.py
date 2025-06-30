@@ -354,10 +354,10 @@ def login():
                 user = cur.fetchone()
 
                 if not user:
-                    return jsonify(success=False, message="Email/Password are  Incorrect"), 404
+                    return jsonify(success=False, message="Email not found 🧐"), 404
 
                 if not check_password_hash(user['password_hash'], password):
-                    return jsonify(success=False, message="Email/Password are Incorrect"), 401
+                    return jsonify(success=False, message="Email/Password are Incorrect 🤭"), 401
 
                 # Establish secure session
                 session.clear()
@@ -428,17 +428,17 @@ def verify_otp():
                     """, (email,))
                     return jsonify(success=True)
                 
-                return jsonify(success=False, message="Invalid OTP"), 400
+                return jsonify(success=False, message="Invalid OTP 🤔"), 400
     except Exception as e:
         logger.error(f"OTP verification error: {e}")
-        return jsonify(success=False, message="OTP verification failed"), 500
+        return jsonify(success=False, message="OTP verification failed 🤯"), 500
 
 @app.route('/api/verify-reset-otp', methods=['POST'])
 def verify_reset_otp():
     """Verify the password reset OTP"""
     data = request.get_json()
     if not data or 'email' not in data or 'otp' not in data:
-        return jsonify(success=False, message="Email and OTP are required"), 400
+        return jsonify(success=False, message="Email and OTP are required 😁"), 400
 
     email = data['email']
     otp = data['otp']
@@ -455,10 +455,10 @@ def verify_reset_otp():
                 user = cur.fetchone()
 
                 if not user:
-                    return jsonify(success=False, message="User not found"), 404
+                    return jsonify(success=False, message="User not found 🥴"), 404
 
                 if not user['reset_password_otp'] or user['reset_password_otp'] != otp:
-                    return jsonify(success=False, message="Invalid OTP"), 400
+                    return jsonify(success=False, message="Invalid OTP 🤭"), 400
 
                 if user['reset_password_otp_expires'] < datetime.utcnow():
                     return jsonify(success=False, message="OTP expired"), 400
